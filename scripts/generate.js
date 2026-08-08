@@ -2,10 +2,16 @@
 /**
  * Regenerates README.md from the live vibeking.fun directory.
  *
- * Data source: GET https://vibeking.fun/api/products — the public, no-key
- * endpoint that returns the full directory as structured JSON.
+ * Data source: GET https://vibeking.fun/api/products?limit=all — the public,
+ * no-key endpoint that returns the directory as structured JSON.
  * (The site's /api/list endpoint returns pre-rendered HTML fragments,
  * so the structured /api/products dump is used instead.)
+ *
+ * NOTE: /api/products is paginated and returns 500 rows by default, so the
+ * `limit=all` parameter is load-bearing — without it this list silently
+ * shrinks to 500 products. The completeness assertion below is the guard.
+ *
+ * API docs: https://vibeking.fun/api
  *
  * No dependencies. Node 18+ (global fetch).
  * Run: node scripts/generate.js
@@ -14,7 +20,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 
-const API_URL = "https://vibeking.fun/api/products";
+const API_URL = "https://vibeking.fun/api/products?limit=all";
 const OUT_FILE = path.join(__dirname, "..", "README.md");
 const TOP_PER_CATEGORY = 15;
 const MIN_CATEGORY_SIZE = 3;
@@ -72,6 +78,16 @@ async function main() {
   }
   const products = body.data;
 
+  // Fail loudly rather than quietly publishing a truncated list. `total` is the
+  // whole directory; if we did not receive all of it, something changed upstream.
+  if (typeof body.total === "number" && products.length < body.total) {
+    throw new Error(
+      `Incomplete dump: received ${products.length} of ${body.total} products. ` +
+        "Check that ?limit=all is still supported by /api/products."
+    );
+  }
+  const liveness = body.liveness || null;
+
   // Group by (merged) category.
   const byCategory = new Map();
   for (const p of products) {
@@ -97,14 +113,30 @@ async function main() {
   const today = new Date().toISOString().slice(0, 10);
   const lines = [];
 
+  const livenessLine = liveness
+    ? `Every listed URL is re-probed on a schedule, and the source API publishes the result: **${liveness.live.toLocaleString("en-US")} confirmed live**, ${liveness.at_risk.toLocaleString("en-US")} at risk, ${liveness.dead.toLocaleString("en-US")} dead, ${liveness.unchecked.toLocaleString("en-US")} not yet checked. Most directories never tell you how much of their index has rotted.`
+    : "";
+
   lines.push(
     "# Awesome Vibe-Coded Apps [![Awesome](https://awesome.re/badge.svg)](https://awesome.re)",
     "",
     "> A curated list of vibe-coded apps — real products built with AI coding tools.",
     "",
-    `Auto-generated daily from the live [vibeking.fun](https://vibeking.fun) directory. Currently tracking **${products.length.toLocaleString("en-US")} products** across **${categories.length} categories**. Each section lists the top ${TOP_PER_CATEGORY} by community upvotes. Last updated ${today}.`,
+    "### ➜ Full searchable directory: **[vibeking.fun](https://vibeking.fun)**",
     "",
-    "Browse the full ranking at [vibeking.fun/best](https://vibeking.fun/best) · [Submit your app](https://vibeking.fun/submit) (free, dofollow backlink)",
+    `This README is a daily snapshot. The live directory has search, category filters, upvoting, maker profiles and every one of the ${products.length.toLocaleString("en-US")} products — this file only shows the top ${TOP_PER_CATEGORY} per category.`,
+    "",
+    "| | |",
+    "|---|---|",
+    "| 🌐 **Browse everything** | [vibeking.fun](https://vibeking.fun) |",
+    "| 🏆 **Current ranking** | [vibeking.fun/best](https://vibeking.fun/best) |",
+    "| 🔌 **Free API (no key)** | [vibeking.fun/api](https://vibeking.fun/api) · [docs repo](https://github.com/0xvibly/vibeking-api) |",
+    "| 🚀 **Add your app** | [vibeking.fun/submit](https://vibeking.fun/submit) — free |",
+    "",
+    "## How this list is built",
+    "",
+    `This file is **regenerated every day by [GitHub Actions](.github/workflows/update.yml)**, straight from the live [vibeking.fun](https://vibeking.fun) directory via its free public API (\`GET /api/products\`, no key, CORS enabled — see [the docs](https://vibeking.fun/api) or the [vibeking-api](https://github.com/0xvibly/vibeking-api) repo). Nothing here is hand-curated, so it never goes stale: **${products.length.toLocaleString("en-US")} products** across **${categories.length} categories**, each section showing the top ${TOP_PER_CATEGORY} by community upvotes. Last updated ${today}.`,
+    ...(livenessLine ? ["", livenessLine] : []),
     "",
     "## Contents",
     ""
@@ -133,9 +165,15 @@ async function main() {
   lines.push(
     "## Contributing",
     "",
-    "This list is generated from live data — see [CONTRIBUTING.md](./CONTRIBUTING.md).",
+    "This list is generated from live data — see [CONTRIBUTING.md](./CONTRIBUTING.md). Pull requests that edit README.md directly are overwritten by the next daily run; submit the product to the directory instead and it flows through automatically.",
     "",
-    "**Built a vibe-coded app?** Submit it → [vibeking.fun/submit](https://vibeking.fun/submit) — free listing, community upvotes, dofollow backlink, and an embeddable badge. Once approved it appears here automatically.",
+    "**Built a vibe-coded app?** Submit it → [vibeking.fun/submit](https://vibeking.fun/submit) — free listing, community upvotes, and an embeddable badge. Put that badge on your own site and your listing's outbound link becomes a followed link ([Verified Makers](https://vibeking.fun/verified)). Once approved, your product appears here on the next daily run.",
+    "",
+    "## Related",
+    "",
+    "- **[vibeking.fun](https://vibeking.fun)** — the live, searchable directory this list is generated from",
+    "- **[vibeking.fun/api](https://vibeking.fun/api)** — the free, no-key API behind it",
+    "- **[0xvibly/vibeking-api](https://github.com/0xvibly/vibeking-api)** — API reference, badge docs, and runnable example clients",
     "",
     "## License",
     "",
